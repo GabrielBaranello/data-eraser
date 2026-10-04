@@ -1,0 +1,27 @@
+ARCH            = x86_64
+OBJS            = ata_wipe.o
+TARGET          = ata_wipe.efi
+
+EFIINC          = /usr/include/efi
+EFIINCS         = -I$(EFIINC) -I$(EFIINC)/$(ARCH) -I$(EFIINC)/protocol
+EFILIB          = /usr/lib
+EFI_CRT_OBJS    = $(EFILIB)/crt0-efi-$(ARCH).o
+EFI_LDS         = $(EFILIB)/elf_$(ARCH)_efi.lds
+
+CFLAGS          = $(EFIINCS) -fno-stack-protector -fpic -fshort-wchar \
+                  -mno-red-zone -Wall -DEFI_FUNCTION_WRAPPER -DGNU_EFI_USE_MS_ABI
+
+LDFLAGS         = -nostdlib -znocombreloc -T $(EFI_LDS) -shared \
+                  -Bsymbolic $(EFI_CRT_OBJS)
+
+all: $(TARGET)
+
+ata_wipe.so: $(OBJS)
+	ld $(LDFLAGS) $(OBJS) -o $@ -lefi -lgnuefi
+
+$(TARGET): ata_wipe.so
+	objcopy -j .text -j .sdata -j .data -j .dynamic -j .dynsym  \
+		-j .rel -j .rela -j .reloc --target=efi-app-$(ARCH) $^ $@
+
+clean:
+	rm -f *.o *.so *(TARGET)
