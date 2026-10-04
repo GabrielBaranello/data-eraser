@@ -1,1 +1,4 @@
 # data-eraser-resourses
+## This proyect is INCOMPLETE
+This project aims to provide a way to wipe your drive with a double-click. It comes with a PowerShell installer that signs a binary and handles most of the heavy lifting. The binary consists of a small piece of compiled C code that sets the ATA Security Feauture password to a random 32-character string and the security mode to "high" to prevent unlocking via a factory master password. It then gets lost to encrypt your data forever.
+The installer also creates a .bat file on the desktop that modifies registry keys to trigger an immediate reboot into the C code with another double-click.

